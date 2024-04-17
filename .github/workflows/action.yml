@@ -1,0 +1,91 @@
+name: 'LNW Terraform Action'
+description: 'LNW Terraform Action'
+inputs:
+  TF_WORKING_DIR:
+    required: false
+    type: string
+    default: ''
+  INSTANCE:
+    required: true
+    type: string
+  AWS_REGION:
+    required: true
+    type: string
+  OU:
+    required: true
+    type: string
+  ACCOUNT:
+    required: true
+    type: string
+  ENVIRONMENT:
+    required: true
+    type: string
+  TF_VERSION:
+    required: true
+    type: string
+  TF_SPOKE_AWS_ACCESS_KEY_ID:
+    required: true
+    type: string
+  TF_SPOKE_AWS_SECRET_ACCESS_KEY:
+    required: true
+    type: string
+  APPLY:
+    required: true
+    type: string
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install make unzip awscli --yes
+
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 20
+
+    - name: Setup Terraform with specified version on the runner
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ inputs.TF_VERSION }}
+
+    - run: terraform version
+      shell: bash
+
+    - shell: bash
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ inputs.TF_SPOKE_AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ inputs.TF_SPOKE_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+
+    - name: AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ inputs.AWS_REGION }}
+        aws-access-key-id: ${{ inputs.TF_SPOKE_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ inputs.TF_SPOKE_AWS_SECRET_ACCESS_KEY }}
+
+    - name: Check AWS access
+      run: aws sts get-caller-identity
+      shell: bash
+
+    - name: Initialise Terraform
+      run: |
+        make -f tools/Makefile init INSTANCE=${{ inputs.INSTANCE }} AWS_REGION=eu-west-1 OU=${{ inputs.OU }} ACCOUNT=${{ inputs.ACCOUNT }} ENV=${{ inputs.ENVIRONMENT }}
+      working-directory: ${{ inputs.TF_WORKING_DIR }}
+      shell: bash
+
+    - name: Terraform Plan
+      run: |
+        make -f tools/Makefile plan INSTANCE=${{ inputs.INSTANCE }} AWS_REGION=${{ inputs.AWS_REGION }} OU=${{ inputs.OU }} ACCOUNT=${{ inputs.ACCOUNT }} ENV=${{ inputs.ENVIRONMENT }}
+      working-directory: ${{ inputs.TF_WORKING_DIR }}
+      shell: bash
+
+    - name: Terraform Apply
+      if: inputs.apply == 'true'
+      run: |
+        make -f tools/Makefile apply APPROVE=yes INSTANCE=${{ inputs.INSTANCE }} AWS_REGION=${{ inputs.AWS_REGION }} OU=${{ inputs.OU }} ACCOUNT=${{ inputs.ACCOUNT }} ENV=${{ inputs.ENVIRONMENT }}
+      working-directory: ${{ inputs.TF_WORKING_DIR }}
+      shell: bash
